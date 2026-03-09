@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveAvatar - 数字人直播一键生成</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" v-cloak>
+        <!-- 导航 -->
+        <nav class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-indigo-600">🎬 LiveAvatar</h1>
+                    <span class="text-gray-500">数字人直播一键生成</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 主要内容 -->
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- 步骤指示器 -->
+            <div class="mb-8">
+                <div class="flex items-center justify-center space-x-4">
+                    <div v-for="(step, index) in steps" :key="index" class="flex items-center">
+                        <div :class="[
+                            'w-10 h-10 rounded-full flex items-center justify-center font-bold',
+                            currentStep >= index ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'
+                        ]">
+                            {{ index + 1 }}
+                        </div>
+                        <span class="ml-2 text-sm" :class="currentStep >= index ? 'text-indigo-600' : 'text-gray-500'">
+                            {{ step }}
+                        </span>
+                        <div v-if="index < steps.length - 1" class="w-12 h-1 mx-4 bg-gray-200"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤内容 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <!-- 步骤1: 上传形象 -->
+                <div v-show="currentStep === 0">
+                    <h2 class="text-xl font-bold mb-4">📸 上传形象图片</h2>
+                    <p class="text-gray-500 mb-4">上传一张正面清晰的人物照片，用于生成数字人</p>
+                    
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center"
+                         @dragover.prevent @drop.prevent="handleDrop">
+                        <input type="file" ref="avatarInput" @change="handleAvatarUpload" accept="image/*" class="hidden">
+                        <div v-if="!previewImage" @click="$refs.avatarInput.click()" class="cursor-pointer">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p class="mt-2 text-gray-500">点击或拖拽上传图片</p>
+                            <p class="text-sm text-gray-400">支持 JPG、PNG 格式</p>
+                        </div>
+                        <div v-else class="relative inline-block">
+                            <img :src="previewImage" class="max-h-64 rounded-lg">
+                            <button @click="clearAvatar" class="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex justify-end">
+                        <button @click="uploadAvatar" :disabled="!selectedFile || uploading"
+                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                            {{ uploading ? '上传中...' : '下一步' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤2: 输入脚本 -->
+                <div v-show="currentStep === 1">
+                    <h2 class="text-xl font-bold mb-4">🎙️ 输入直播脚本</h2>
+                    <p class="text-gray-500 mb-4">输入数字人要说的话，选择音色</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">脚本内容</label>
+                            <textarea v-model="script" rows="6"
+                                class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="欢迎来到直播间！我是你的数字人主播..."></textarea>
+                            <p class="text-sm text-gray-400 mt-1">{{ script.length }} / 5000 字符</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">音色选择</label>
+                                <select v-model="selectedVoice" class="w-full border border-gray-300 rounded-lg p-2">
+                                    <option v-for="voice in voices" :key="voice.voice_id" :value="voice.voice_id">
+                                        {{ voice.name }} ({{ voice.gender === 'female' ? '女' : '男' }})
+                                    </option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">语速</label>
+                                <input type="range" v-model="speed" min="0.5" max="2" step="0.1" class="w-full mt-2">
+                                <p class="text-sm text-gray-500 text-center">{{ speed }}x</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex justify-between">
+                        <button @click="currentStep = 0" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                            上一步
+                        </button>
+                        <button @click="synthesizeSpeech" :disabled="!script || synthesizing"
+                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                            {{ synthesizing ? '合成中...' : '生成语音' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤3: 生成视频 -->
+                <div v-show="currentStep === 2">
+                    <h2 class="text-xl font-bold mb-4">🎬 生成数字人视频</h2>
+                    <p class="text-gray-500 mb-4">选择分辨率，生成最终视频</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">视频分辨率</label>
+                            <select v-model="resolution" class="w-full border border-gray-300 rounded-lg p-2">
+                                <option value="1080x1920">竖屏 1080x1920 (抖音/视频号)</option>
+                                <option value="720x1280">竖屏 720x1280</option>
+                                <option value="1920x1080">横屏 1920x1080 (B站)</option>
+                            </select>
+                        </div>
+                        
+                        <div v-if="taskId" class="bg-gray-50 rounded-lg p-4">
+                            <p class="font-medium">生成状态</p>
+                            <div class="mt-2 flex items-center">
+                                <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                    <div class="bg-indigo-600 h-2 rounded-full transition-all"
+                                         :style="{ width: taskProgress + '%' }"></div>
+                                </div>
+                                <span class="ml-2 text-sm text-gray-500">{{ taskProgress }}%</span>
+                            </div>
+                            <p class="mt-2 text-sm" :class="{
+                                'text-yellow-600': taskStatus === 'processing',
+                                'text-green-600': taskStatus === 'completed',
+                                'text-red-600': taskStatus === 'failed'
+                            }">{{ taskStatusText }}</p>
+                        </div>
+                        
+                        <div v-if="videoUrl" class="bg-green-50 rounded-lg p-4">
+                            <p class="text-green-700 font-medium">✅ 视频生成成功！</p>
+                            <video :src="videoUrl" controls class="mt-4 w-full max-h-96 rounded-lg"></video>
+                            <a :href="videoUrl" download class="mt-2 inline-block px-4 py-2 bg-green-600 text-white rounded-lg">
+                                下载视频
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex justify-between">
+                        <button @click="currentStep = 1" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                            上一步
+                        </button>
+                        <button @click="generateVideo" :disabled="generating"
+                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                            {{ generating ? '生成中...' : '生成视频' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤4: 开始直播 -->
+                <div v-show="currentStep === 3">
+                    <h2 class="text-xl font-bold mb-4">📺 开始直播</h2>
+                    <p class="text-gray-500 mb-4">配置推流信息，一键开播</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">直播平台</label>
+                            <select v-model="platform" class="w-full border border-gray-300 rounded-lg p-2">
+                                <option value="douyin">抖音</option>
+                                <option value="bilibili">B站</option>
+                                <option value="wechat">视频号</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">推流地址</label>
+                            <input v-model="streamUrl" type="text"
+                                class="w-full border border-gray-300 rounded-lg p-2"
+                                placeholder="rtmp://...">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">推流密钥</label>
+                            <input v-model="streamKey" type="password"
+                                class="w-full border border-gray-300 rounded-lg p-2"
+                                placeholder="stream-xxx">
+                        </div>
+                        
+                        <div v-if="liveId" class="bg-green-50 rounded-lg p-4">
+                            <p class="text-green-700 font-medium">🔴 直播中</p>
+                            <p class="text-sm text-gray-500 mt-1">已直播 {{ liveDuration }} 秒</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex justify-between">
+                        <button @click="currentStep = 2" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                            上一步
+                        </button>
+                        <button v-if="!liveId" @click="startLive" :disabled="!streamUrl || !streamKey"
+                                class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                            开始直播
+                        </button>
+                        <button v-else @click="stopLive" class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                            停止直播
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 已保存的资源 -->
+            <div class="mt-8 grid grid-cols-3 gap-4">
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h3 class="font-bold mb-2">📸 已上传形象</h3>
+                    <div v-if="avatars.length === 0" class="text-gray-400 text-sm">暂无</div>
+                    <div v-else class="space-y-2">
+                        <div v-for="avatar in avatars" :key="avatar.avatar_id" 
+                             class="flex items-center space-x-2 p-2 bg-gray-50 rounded">
+                            <img :src="apiBase + avatar.image_url" class="w-10 h-10 rounded object-cover">
+                            <span class="text-sm">{{ avatar.name }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h3 class="font-bold mb-2">🎙️ 已生成音频</h3>
+                    <div v-if="audios.length === 0" class="text-gray-400 text-sm">暂无</div>
+                    <div v-else class="space-y-2">
+                        <div v-for="audio in audios" :key="audio.audio_id" 
+                             class="p-2 bg-gray-50 rounded">
+                            <p class="text-sm truncate">{{ audio.text }}</p>
+                            <audio :src="apiBase + audio.audio_url" controls class="w-full mt-1 h-8"></audio>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h3 class="font-bold mb-2">🎬 已生成视频</h3>
+                    <div v-if="videos.length === 0" class="text-gray-400 text-sm">暂无</div>
+                    <div v-else class="space-y-2">
+                        <div v-for="video in videos" :key="video.task_id" 
+                             class="p-2 bg-gray-50 rounded text-sm">
+                            <span :class="{
+                                'text-green-600': video.status === 'completed',
+                                'text-yellow-600': video.status === 'processing',
+                                'text-red-600': video.status === 'failed'
+                            }">{{ video.status === 'completed' ? '✅' : video.status === 'processing' ? '⏳' : '❌' }}</span>
+                            {{ video.task_id.slice(0, 8) }}...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 消息提示 -->
+        <transition name="fade">
+            <div v-if="message" class="fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg"
+                 :class="messageType === 'error' ? 'bg-red-500' : 'bg-green-500'">
+                <p class="text-white">{{ message }}</p>
+            </div>
+        </transition>
+    </div>
+
+    <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const apiBase = ref('');  // 将由后端服务
+            
+            const steps = ['上传形象', '输入脚本', '生成视频', '开始直播'];
+            const currentStep = ref(0);
+            
+            // 步骤1: 形象上传
+            const selectedFile = ref(null);
+            const previewImage = ref('');
+            const uploading = ref(false);
+            const avatarId = ref('');
+            const avatarInput = ref(null);
+            const avatars = ref([]);
+            
+            // 步骤2: 语音合成
+            const script = ref('');
+            const voices = ref([
+                { voice_id: 'zh_female_tianmei', name: '甜美女声', gender: 'female', language: 'zh-CN' },
+                { voice_id: 'zh_male_chunhou', name: '醇厚男声', gender: 'male', language: 'zh-CN' },
+                { voice_id: 'zh_female_wanwan', name: '温婉女声', gender: 'female', language: 'zh-CN' },
+                { voice_id: 'zh_male_hunhou', name: '浑厚男声', gender: 'male', language: 'zh-CN' }
+            ]);
+            const selectedVoice = ref('zh_female_tianmei');
+            const speed = ref(1.0);
+            const synthesizing = ref(false);
+            const audioId = ref('');
+            const audios = ref([]);
+            
+            // 步骤3: 视频生成
+            const resolution = ref('1080x1920');
+            const generating = ref(false);
+            const taskId = ref('');
+            const taskStatus = ref('');
+            const taskProgress = ref(0);
+            const videoUrl = ref('');
+            const videos = ref([]);
+            
+            // 步骤4: 直播
+            const platform = ref('douyin');
+            const streamUrl = ref('');
+            const streamKey = ref('');
+            const liveId = ref('');
+            const liveDuration = ref(0);
+            
+            // 消息
+            const message = ref('');
+            const messageType = ref('success');
+            
+            const taskStatusText = computed(() => {
+                const statusMap = {
+                    'pending': '等待处理...',
+                    'processing': '正在生成...',
+                    'completed': '生成完成！',
+                    'failed': '生成失败'
+                };
+                return statusMap[taskStatus.value] || '';
+            });
+            
+            const showMessage = (msg, type = 'success') => {
+                message.value = msg;
+                messageType.value = type;
+                setTimeout(() => message.value = '', 3000);
+            };
+            
+            const handleDrop = (e) => {
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    handleFileSelect(file);
+                }
+            };
+            
+            const handleAvatarUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    handleFileSelect(file);
+                }
+            };
+            
+            const handleFileSelect = (file) => {
+                selectedFile.value = file;
+                const reader = new FileReader();
+                reader.onload = (e) => previewImage.value = e.target.result;
+                reader.readAsDataURL(file);
+            };
+            
+            const clearAvatar = () => {
+                selectedFile.value = null;
+                previewImage.value = '';
+            };
+            
+            const uploadAvatar = async () => {
+                if (!selectedFile.value) return;
+                
+                uploading.value = true;
+                const formData = new FormData();
+                formData.append('file', selectedFile.value);
+                formData.append('name', '形象_' + Date.now());
+                
+                try {
+                    const res = await axios.post('/api/avatar/upload', formData);
+                    avatarId.value = res.data.data.avatar_id;
+                    showMessage('形象上传成功！');
+                    currentStep.value = 1;
+                    loadAvatars();
+                } catch (err) {
+                    showMessage(err.response?.data?.detail || '上传失败', 'error');
+                } finally {
+                    uploading.value = false;
+                }
+            };
+            
+            const synthesizeSpeech = async () => {
+                if (!script.value) return;
+                
+                synthesizing.value = true;
+                try {
+                    const res = await axios.post('/api/tts/synthesize', {
+                        text: script.value,
+                        voice_type: selectedVoice.value,
+                        speed: speed.value
+                    });
+                    audioId.value = res.data.data.audio_id;
+                    showMessage('语音合成成功！');
+                    currentStep.value = 2;
+                    loadAudios();
+                } catch (err) {
+                    showMessage(err.response?.data?.detail || '合成失败', 'error');
+                } finally {
+                    synthesizing.value = false;
+                }
+            };
+            
+            const generateVideo = async () => {
+                if (!avatarId.value || !audioId.value) {
+                    showMessage('请先上传形象和合成语音', 'error');
+                    return;
+                }
+                
+                generating.value = true;
+                try {
+                    const res = await axios.post('/api/video/generate', {
+                        avatar_id: avatarId.value,
+                        audio_id: audioId.value,
+                        resolution: resolution.value
+                    });
+                    taskId.value = res.data.data.task_id;
+                    taskStatus.value = 'pending';
+                    taskProgress.value = 0;
+                    
+                    // 轮询状态
+                    pollVideoStatus();
+                } catch (err) {
+                    showMessage(err.response?.data?.detail || '生成失败', 'error');
+                    generating.value = false;
+                }
+            };
+            
+            const pollVideoStatus = async () => {
+                const poll = async () => {
+                    try {
+                        const res = await axios.get(`/api/video/status/${taskId.value}`);
+                        taskStatus.value = res.data.data.status;
+                        taskProgress.value = res.data.data.progress;
+                        
+                        if (res.data.data.status === 'completed') {
+                            videoUrl.value = res.data.data.video_url;
+                            showMessage('视频生成成功！');
+                            generating.value = false;
+                            currentStep.value = 3;
+                            loadVideos();
+                        } else if (res.data.data.status === 'failed') {
+                            showMessage('视频生成失败: ' + res.data.data.error, 'error');
+                            generating.value = false;
+                        } else {
+                            setTimeout(poll, 2000);
+                        }
+                    } catch (err) {
+                        generating.value = false;
+                    }
+                };
+                poll();
+            };
+            
+            const startLive = async () => {
+                try {
+                    const res = await axios.post('/api/live/start', {
+                        video_id: taskId.value,
+                        platform: platform.value,
+                        stream_url: streamUrl.value,
+                        stream_key: streamKey.value
+                    });
+                    liveId.value = res.data.data.live_id;
+                    showMessage('直播已启动！');
+                } catch (err) {
+                    showMessage(err.response?.data?.detail || '启动失败', 'error');
+                }
+            };
+            
+            const stopLive = async () => {
+                try {
+                    await axios.post(`/api/live/stop/${liveId.value}`);
+                    liveId.value = '';
+                    showMessage('直播已停止');
+                } catch (err) {
+                    showMessage(err.response?.data?.detail || '停止失败', 'error');
+                }
+            };
+            
+            const loadAvatars = async () => {
+                try {
+                    const res = await axios.get('/api/avatar/list');
+                    avatars.value = res.data.data.avatars;
+                } catch (err) {}
+            };
+            
+            const loadAudios = async () => {
+                try {
+                    const res = await axios.get('/api/tts/list');
+                    audios.value = res.data.data.audios;
+                } catch (err) {}
+            };
+            
+            const loadVideos = async () => {
+                try {
+                    const res = await axios.get('/api/video/list');
+                    videos.value = res.data.data.videos;
+                } catch (err) {}
+            };
+            
+            onMounted(() => {
+                loadAvatars();
+                loadAudios();
+                loadVideos();
+            });
+            
+            return {
+                apiBase, steps, currentStep,
+                selectedFile, previewImage, uploading, avatarInput, avatars,
+                script, voices, selectedVoice, speed, synthesizing, audios,
+                resolution, generating, taskId, taskStatus, taskProgress, videoUrl, videos,
+                platform, streamUrl, streamKey, liveId, liveDuration,
+                message, messageType, taskStatusText,
+                handleDrop, handleAvatarUpload, clearAvatar, uploadAvatar,
+                synthesizeSpeech, generateVideo, startLive, stopLive
+            };
+        }
+    }).mount('#app');
+    </script>
+</body>
+</html>

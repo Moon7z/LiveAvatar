@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  liveavatar:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - VOLCENGINE_API_KEY=65a13723-8fe6-467e-b6bd-e9ff299eeef7
+      - DEBUG=true
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/outputs:/app/outputs
+    restart: unless-stopped
