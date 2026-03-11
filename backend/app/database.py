@@ -1,7 +1,8 @@
-from sqlalchemy import Column, String, DateTime, Integer, create_engine
+from sqlalchemy import Column, String, DateTime, Integer, create_engine, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+import json
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./liveavatar.db")
 
@@ -18,6 +19,30 @@ class AvatarModel(Base):
     name = Column(String)
     image_url = Column(String)
     created_at = Column(DateTime)
+    # 三视图 JSON 存储: {"front": "path", "side": "path", "back": "path"}
+    three_views = Column(Text, nullable=True)
+    # 用户选择的视角: front, side, back（默认 front）
+    selected_view = Column(String, default="front")
+    
+    def get_three_views(self):
+        """获取三视图字典"""
+        if self.three_views:
+            try:
+                return json.loads(self.three_views)
+            except:
+                return None
+        return None
+    
+    def set_three_views(self, views_dict):
+        """设置三视图"""
+        self.three_views = json.dumps(views_dict)
+    
+    def get_selected_image_url(self):
+        """获取用户选择的视角图片URL"""
+        three_views = self.get_three_views()
+        if three_views and self.selected_view:
+            return three_views.get(self.selected_view)
+        return self.image_url
 
 
 class AudioModel(Base):

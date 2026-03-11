@@ -11,6 +11,9 @@
         [v-cloak] { display: none; }
         .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
         .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .view-card { transition: all 0.2s; }
+        .view-card:hover { transform: translateY(-2px); }
+        .view-card.selected { ring: 2px; ring-color: #4f46e5; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -50,7 +53,7 @@
                 <!-- 步骤1: 上传形象 -->
                 <div v-show="currentStep === 0">
                     <h2 class="text-xl font-bold mb-4">📸 上传形象图片</h2>
-                    <p class="text-gray-500 mb-4">上传一张正面清晰的人物照片，用于生成数字人</p>
+                    <p class="text-gray-500 mb-4">上传一张正面清晰的人物照片，系统将自动生成三视图</p>
                     
                     <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center"
                          @dragover.prevent @drop.prevent="handleDrop">
@@ -75,13 +78,56 @@
                     <div class="mt-6 flex justify-end">
                         <button @click="uploadAvatar" :disabled="!selectedFile || uploading"
                                 class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                            {{ uploading ? '上传中...' : '下一步' }}
+                            {{ uploading ? '上传并生成三视图...' : '下一步' }}
                         </button>
                     </div>
                 </div>
 
-                <!-- 步骤2: 输入脚本 -->
+                <!-- 步骤2: 选择视角 -->
                 <div v-show="currentStep === 1">
+                    <h2 class="text-xl font-bold mb-4">🎭 选择视角</h2>
+                    <p class="text-gray-500 mb-4">系统已生成三视图，选择你想用的角度（默认正面）</p>
+                    
+                    <!-- 三视图加载中 -->
+                    <div v-if="loadingViews" class="text-center py-8">
+                        <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <p class="mt-2 text-gray-500">正在生成三视图，请稍候...</p>
+                    </div>
+                    
+                    <!-- 三视图展示 -->
+                    <div v-else-if="threeViews" class="grid grid-cols-3 gap-4">
+                        <div v-for="(view, key) in threeViews" :key="key"
+                             @click="selectView(key)"
+                             :class="['view-card cursor-pointer rounded-lg border-2 p-2', 
+                                      selectedView === key ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200']">
+                            <img :src="view.url" class="w-full h-48 object-cover rounded-lg">
+                            <p class="text-center mt-2 font-medium" :class="selectedView === key ? 'text-indigo-600' : 'text-gray-700'">
+                                {{ view.label }}
+                                <span v-if="selectedView === key" class="text-green-500">✓</span>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div v-else class="text-center py-8 text-gray-500">
+                        三视图生成中，请稍后再试
+                    </div>
+                    
+                    <div class="mt-6 flex justify-between">
+                        <button @click="currentStep = 0" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                            上一步
+                        </button>
+                        <button @click="currentStep = 2" :disabled="!threeViews"
+                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                            下一步
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤3: 输入脚本 -->
+                <div v-show="currentStep === 2">
                     <h2 class="text-xl font-bold mb-4">🎙️ 输入直播脚本</h2>
                     <p class="text-gray-500 mb-4">输入数字人要说的话，选择音色</p>
                     
@@ -112,7 +158,7 @@
                     </div>
                     
                     <div class="mt-6 flex justify-between">
-                        <button @click="currentStep = 0" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <button @click="currentStep = 1" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                             上一步
                         </button>
                         <button @click="synthesizeSpeech" :disabled="!script || synthesizing"
@@ -122,8 +168,8 @@
                     </div>
                 </div>
 
-                <!-- 步骤3: 生成视频 -->
-                <div v-show="currentStep === 2">
+                <!-- 步骤4: 生成视频 -->
+                <div v-show="currentStep === 3">
                     <h2 class="text-xl font-bold mb-4">🎬 生成数字人视频</h2>
                     <p class="text-gray-500 mb-4">选择分辨率，生成最终视频</p>
                     
@@ -163,7 +209,7 @@
                     </div>
                     
                     <div class="mt-6 flex justify-between">
-                        <button @click="currentStep = 1" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <button @click="currentStep = 2" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                             上一步
                         </button>
                         <button @click="generateVideo" :disabled="generating"
@@ -173,8 +219,8 @@
                     </div>
                 </div>
 
-                <!-- 步骤4: 开始直播 -->
-                <div v-show="currentStep === 3">
+                <!-- 步骤5: 开始直播 -->
+                <div v-show="currentStep === 4">
                     <h2 class="text-xl font-bold mb-4">📺 开始直播</h2>
                     <p class="text-gray-500 mb-4">配置推流信息，一键开播</p>
                     
@@ -209,7 +255,7 @@
                     </div>
                     
                     <div class="mt-6 flex justify-between">
-                        <button @click="currentStep = 2" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <button @click="currentStep = 3" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                             上一步
                         </button>
                         <button v-if="!liveId" @click="startLive" :disabled="!streamUrl || !streamKey"
@@ -219,49 +265,6 @@
                         <button v-else @click="stopLive" class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
                             停止直播
                         </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 已保存的资源 -->
-            <div class="mt-8 grid grid-cols-3 gap-4">
-                <div class="bg-white rounded-lg shadow p-4">
-                    <h3 class="font-bold mb-2">📸 已上传形象</h3>
-                    <div v-if="avatars.length === 0" class="text-gray-400 text-sm">暂无</div>
-                    <div v-else class="space-y-2">
-                        <div v-for="avatar in avatars" :key="avatar.avatar_id" 
-                             class="flex items-center space-x-2 p-2 bg-gray-50 rounded">
-                            <img :src="apiBase + avatar.image_url" class="w-10 h-10 rounded object-cover">
-                            <span class="text-sm">{{ avatar.name }}</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow p-4">
-                    <h3 class="font-bold mb-2">🎙️ 已生成音频</h3>
-                    <div v-if="audios.length === 0" class="text-gray-400 text-sm">暂无</div>
-                    <div v-else class="space-y-2">
-                        <div v-for="audio in audios" :key="audio.audio_id" 
-                             class="p-2 bg-gray-50 rounded">
-                            <p class="text-sm truncate">{{ audio.text }}</p>
-                            <audio :src="apiBase + audio.audio_url" controls class="w-full mt-1 h-8"></audio>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow p-4">
-                    <h3 class="font-bold mb-2">🎬 已生成视频</h3>
-                    <div v-if="videos.length === 0" class="text-gray-400 text-sm">暂无</div>
-                    <div v-else class="space-y-2">
-                        <div v-for="video in videos" :key="video.task_id" 
-                             class="p-2 bg-gray-50 rounded text-sm">
-                            <span :class="{
-                                'text-green-600': video.status === 'completed',
-                                'text-yellow-600': video.status === 'processing',
-                                'text-red-600': video.status === 'failed'
-                            }">{{ video.status === 'completed' ? '✅' : video.status === 'processing' ? '⏳' : '❌' }}</span>
-                            {{ video.task_id.slice(0, 8) }}...
-                        </div>
                     </div>
                 </div>
             </div>
@@ -281,9 +284,7 @@
 
     createApp({
         setup() {
-            const apiBase = ref('');  // 将由后端服务
-            
-            const steps = ['上传形象', '输入脚本', '生成视频', '开始直播'];
+            const steps = ['上传形象', '选择视角', '输入脚本', '生成视频', '开始直播'];
             const currentStep = ref(0);
             
             // 步骤1: 形象上传
@@ -292,32 +293,34 @@
             const uploading = ref(false);
             const avatarId = ref('');
             const avatarInput = ref(null);
-            const avatars = ref([]);
             
-            // 步骤2: 语音合成
+            // 步骤2: 选择视角
+            const threeViews = ref(null);
+            const selectedView = ref('front');
+            const loadingViews = ref(false);
+            
+            // 步骤3: 语音合成
             const script = ref('');
             const voices = ref([
+                { voice_id: 'BV001_streaming', name: '通用女声', gender: 'female', language: 'zh-CN' },
+                { voice_id: 'BV002_streaming', name: '通用男声', gender: 'male', language: 'zh-CN' },
                 { voice_id: 'zh_female_tianmei', name: '甜美女声', gender: 'female', language: 'zh-CN' },
                 { voice_id: 'zh_male_chunhou', name: '醇厚男声', gender: 'male', language: 'zh-CN' },
-                { voice_id: 'zh_female_wanwan', name: '温婉女声', gender: 'female', language: 'zh-CN' },
-                { voice_id: 'zh_male_hunhou', name: '浑厚男声', gender: 'male', language: 'zh-CN' }
             ]);
             const selectedVoice = ref('zh_female_tianmei');
             const speed = ref(1.0);
             const synthesizing = ref(false);
             const audioId = ref('');
-            const audios = ref([]);
             
-            // 步骤3: 视频生成
+            // 步骤4: 视频生成
             const resolution = ref('1080x1920');
             const generating = ref(false);
             const taskId = ref('');
             const taskStatus = ref('');
             const taskProgress = ref(0);
             const videoUrl = ref('');
-            const videos = ref([]);
             
-            // 步骤4: 直播
+            // 步骤5: 直播
             const platform = ref('douyin');
             const streamUrl = ref('');
             const streamKey = ref('');
@@ -377,17 +380,52 @@
                 const formData = new FormData();
                 formData.append('file', selectedFile.value);
                 formData.append('name', '形象_' + Date.now());
+                formData.append('generate_views', 'true');
                 
                 try {
                     const res = await axios.post('/api/avatar/upload', formData);
                     avatarId.value = res.data.data.avatar_id;
-                    showMessage('形象上传成功！');
+                    showMessage('上传成功，正在生成三视图...');
+                    
+                    // 轮询获取三视图
+                    loadingViews.value = true;
                     currentStep.value = 1;
-                    loadAvatars();
+                    
+                    const checkViews = async () => {
+                        try {
+                            const viewsRes = await axios.get(`/api/avatar/${avatarId.value}/views`);
+                            if (viewsRes.data.data.status === 'generated') {
+                                threeViews.value = viewsRes.data.data.views;
+                                selectedView.value = 'front';
+                                loadingViews.value = false;
+                                showMessage('三视图生成完成！');
+                            } else {
+                                setTimeout(checkViews, 3000);
+                            }
+                        } catch (e) {
+                            setTimeout(checkViews, 3000);
+                        }
+                    };
+                    setTimeout(checkViews, 2000);
+                    
                 } catch (err) {
                     showMessage(err.response?.data?.detail || '上传失败', 'error');
                 } finally {
                     uploading.value = false;
+                }
+            };
+            
+            const selectView = async (viewType) => {
+                selectedView.value = viewType;
+                
+                try {
+                    await axios.post(`/api/avatar/${avatarId.value}/select-view`, 
+                        `view_type=${viewType}`,
+                        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+                    );
+                    showMessage(`已选择${viewType === 'front' ? '正面' : viewType === 'side' ? '侧面' : '背面'}视角`);
+                } catch (err) {
+                    console.error('选择视角失败', err);
                 }
             };
             
@@ -403,8 +441,7 @@
                     });
                     audioId.value = res.data.data.audio_id;
                     showMessage('语音合成成功！');
-                    currentStep.value = 2;
-                    loadAudios();
+                    currentStep.value = 3;
                 } catch (err) {
                     showMessage(err.response?.data?.detail || '合成失败', 'error');
                 } finally {
@@ -429,7 +466,6 @@
                     taskStatus.value = 'pending';
                     taskProgress.value = 0;
                     
-                    // 轮询状态
                     pollVideoStatus();
                 } catch (err) {
                     showMessage(err.response?.data?.detail || '生成失败', 'error');
@@ -448,8 +484,7 @@
                             videoUrl.value = res.data.data.video_url;
                             showMessage('视频生成成功！');
                             generating.value = false;
-                            currentStep.value = 3;
-                            loadVideos();
+                            currentStep.value = 4;
                         } else if (res.data.data.status === 'failed') {
                             showMessage('视频生成失败: ' + res.data.data.error, 'error');
                             generating.value = false;
@@ -488,41 +523,15 @@
                 }
             };
             
-            const loadAvatars = async () => {
-                try {
-                    const res = await axios.get('/api/avatar/list');
-                    avatars.value = res.data.data.avatars;
-                } catch (err) {}
-            };
-            
-            const loadAudios = async () => {
-                try {
-                    const res = await axios.get('/api/tts/list');
-                    audios.value = res.data.data.audios;
-                } catch (err) {}
-            };
-            
-            const loadVideos = async () => {
-                try {
-                    const res = await axios.get('/api/video/list');
-                    videos.value = res.data.data.videos;
-                } catch (err) {}
-            };
-            
-            onMounted(() => {
-                loadAvatars();
-                loadAudios();
-                loadVideos();
-            });
-            
             return {
-                apiBase, steps, currentStep,
-                selectedFile, previewImage, uploading, avatarInput, avatars,
-                script, voices, selectedVoice, speed, synthesizing, audios,
-                resolution, generating, taskId, taskStatus, taskProgress, videoUrl, videos,
+                steps, currentStep,
+                selectedFile, previewImage, uploading, avatarInput, avatarId,
+                threeViews, selectedView, loadingViews,
+                script, voices, selectedVoice, speed, synthesizing, audioId,
+                resolution, generating, taskId, taskStatus, taskProgress, videoUrl,
                 platform, streamUrl, streamKey, liveId, liveDuration,
                 message, messageType, taskStatusText,
-                handleDrop, handleAvatarUpload, clearAvatar, uploadAvatar,
+                handleDrop, handleAvatarUpload, clearAvatar, uploadAvatar, selectView,
                 synthesizeSpeech, generateVideo, startLive, stopLive
             };
         }
